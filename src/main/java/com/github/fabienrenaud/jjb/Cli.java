@@ -95,6 +95,18 @@ public final class Cli {
                 .threads(threads);
 //                .addProfiler(StackProfiler.class);
 
+            // Pass through json-io ResolverInstrumentation settings to JMH-
+            // forked JVMs. The parent JVM's system properties don't propagate
+            // automatically — the JMH Runner spawns fresh JVMs whose args are
+            // controlled here. Only forwarded when set in the parent.
+            if ("true".equalsIgnoreCase(System.getProperty("jsonio.instrumentResolver"))) {
+                b.jvmArgsAppend("-Djsonio.instrumentResolver=true");
+                String dumpFile = System.getProperty("jsonio.instrumentResolverDumpFile");
+                if (dumpFile != null && !dumpFile.isEmpty()) {
+                    b.jvmArgsAppend("-Djsonio.instrumentResolverDumpFile=" + dumpFile);
+                }
+            }
+
             List<String> includes = includes();
             if (includes.isEmpty()) {
                 exit("No tests to run. Check 'info' to see what you can do.");

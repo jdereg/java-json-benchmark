@@ -1,0 +1,56 @@
+#!/bin/sh -e
+#
+# Run all json-io databind deserialization benchmarks against USERS and CLIENTS
+# data at sizes 1/10/100/1000 KB, with ResolverInstrumentation enabled. Each
+# JMH-forked JVM appends its per-class stats to $DUMP_FILE on shutdown.
+#
+# Total wall time estimate (default JMH cfg: 2 forks * (5 warmup + 10 meas) *
+# 3 sec): ~90s per benchmark * 8 runs = ~12 minutes. Add JVM startup / build
+# overhead and it's typically 20-30 minutes. Plenty of headroom for analysis
+# in the morning.
+
+DUMP_FILE="${DUMP_FILE:-${HOME}/jjb-instrumentation-dump.txt}"
+OUTPUT_DIR="${OUTPUT_DIR:-output-jsonio-instrumented}"
+
+DATA_TYPES="users clients"
+SIZES="1 10 100 1000"
+
+JVM_OPTIONS="-server -Xms2g -Xmx2g --add-opens=java.base/java.time=ALL-UNNAMED --add-modules=jdk.incubator.vector"
+JVM_OPTIONS="${JVM_OPTIONS} -Djsonio.instrumentResolver=true"
+JVM_OPTIONS="${JVM_OPTIONS} -Djsonio.instrumentResolverDumpFile=${DUMP_FILE}"
+export JVM_OPTIONS
+
+# Clean previous dump so this run's output is self-contained.
+rm -f "${DUMP_FILE}"
+
+echo ./gradlew clean build shadowJar
+./gradlew clean build shadowJar
+export SHADOW=done
+
+mkdir -p "${OUTPUT_DIR}"
+
+START_EPOCH=$(date +%s)
+echo "=== Starting at $(date) ==="
+echo "=== Dump file: ${DUMP_FILE} ==="
+echo
+
+for datatype in ${DATA_TYPES}; do
+    for size in ${SIZES}; do
+        outputFile="${OUTPUT_DIR}/${datatype}-deser-${size}k.txt"
+        echo "=== ${datatype} deser size=${size}k ==="
+        echo ./run deser --datatype ${datatype} --size ${size} --number 1 --libs jsonio --apis databind
+        ./run deser \
+            --datatype "${datatype}" \
+            --size "${size}" \
+            --number 1 \
+            --libs jsonio \
+            --apis databind \
+            | tee "${outputFile}"
+        echo
+    done
+done
+
+END_EPOCH=$(date +%s)
+echo "=== Done at $(date)  (elapsed: $((END_EPOCH - START_EPOCH)) sec) ==="
+echo "=== Dump file (size: $(wc -c < "${DUMP_FILE}") bytes): ${DUMP_FILE} ==="
+echo "=== Per-run summaries in: ${OUTPUT_DIR}/ ==="
